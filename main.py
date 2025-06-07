@@ -9,6 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
+import yaml
+import os
+
 def set_seed(seed):
     """
     乱数シードを固定するための関数
@@ -21,7 +24,7 @@ def set_seed(seed):
     np.random.seed(seed)             # NumPyの乱数シード
     random.seed(seed)                # Python標準の乱数シード
 
-def load_mnist_0_1(batch_size=64):
+def load_mnist_data(batch_size=64, target_labels=[0, 1]):
     transform = transforms.Compose([
         transforms.ToTensor(),
         #   - MNISTデータセット全体の平均値と標準偏差を使用しています。
@@ -36,8 +39,8 @@ def load_mnist_0_1(batch_size=64):
     # 0と1のデータのみを抽出するためのインデックスリストを作成
     # enumerate(train_dataset.targets): データセットの各要素のインデックスとラベルを取得
     # if label in [0, 1]: ラベルが0または1の場合のみ抽出
-    train_indices_0_1 = [i for i, label in enumerate(train_dataset.targets) if label in [0, 1]]
-    test_indices_0_1 = [i for i, label in enumerate(test_dataset.targets) if label in [0, 1]]
+    train_indices_0_1 = [i for i, label in enumerate(train_dataset.targets) if label in target_labels]
+    test_indices_0_1 = [i for i, label in enumerate(test_dataset.targets) if label in target_labels]
 
     train_subset = Subset(train_dataset, train_indices_0_1)
     test_subset = Subset(test_dataset, test_indices_0_1)
@@ -45,21 +48,23 @@ def load_mnist_0_1(batch_size=64):
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
 
-    print(f"[INFO] Training data (0s and 1s): {len(train_loader.dataset)} samples")
-    print(f"[INFO] Test data (0s and 1s): {len(test_loader.dataset)} samples")
+    num_classes = len(target_labels)  # 抽出されたクラスの数を計算
 
-    return train_loader, test_loader
+    print(f"[INFO] Training data ({target_labels[0]} and {target_labels[1]}): {len(train_loader.dataset)} samples")
+    print(f"[INFO] Test data ({target_labels[0]} and {target_labels[1]}): {len(test_loader.dataset)} samples")
+
+    return train_loader, test_loader, num_classes
 
 # ニューラルネットワークモデルの定義
 class TestNN(nn.Module):
     """
     MNISTの2クラス分類（0と1）を行うためのシンプルな全結合ニューラルネットワーク。
     """
-    def __init__(self):
+    def __init__(self, hidden_nodes=128, num_classes=2):
         super(TestNN, self).__init__()
-        self.fc1 = nn.Linear(28 * 28, 128)  # 入力層 784ノード
+        self.fc1 = nn.Linear(28 * 28, hidden_nodes)  # 入力層 784ノード
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(128, 2)        # 出力層 2ノード（0と1の分類）
+        self.fc2 = nn.Linear(hidden_nodes, num_classes) # 出力層 2ノード（0と1の分類）
 
     def forward(self, x):
         x = x.view(-1, 28 * 28)  # 画像をフラット化
@@ -69,7 +74,7 @@ class TestNN(nn.Module):
 
         return x
 
-def train(model, device, train_loader, optimizer, criterion, epoch):
+def train(model, device, train_loader, optimizer, criterion, epoch, label_mapping):
     """
     モデルを訓練するための関数。
     各エポックで、訓練データセット全体を処理します。
@@ -82,6 +87,12 @@ def train(model, device, train_loader, optimizer, criterion, epoch):
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
+
+        target_mapped = torch.zeros_like(target) # targetと同じ形状の0で埋められたテンソルを作成
+        for original_label, mapped_index in label_mapping.items():
+            target_mapped[target == original_label] = mapped_index
+        target = target_mapped # マッピングされたターゲットを使用
+
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -106,7 +117,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch):
     print(f'\nEpoch {epoch} Training Summary: Avg Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
 
 
-def test(model, device, test_loader, criterion):
+def test(model, device, test_loader, criterion, label_mapping):
     """
     モデルを評価するための関数。
     テストデータセット全体でのモデルの性能を測定します。
@@ -122,6 +133,12 @@ def test(model, device, test_loader, criterion):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
+
+            target_mapped = torch.zeros_like(target)
+            for original_label, mapped_index in label_mapping.items():
+                target_mapped[target == original_label] = mapped_index
+            target = target_mapped # マッピングされたターゲットを使用
+
             output = model(data)
             test_loss += criterion(output, target).item() # 損失を加算 (item()でテンソルから数値を取り出す)
 
@@ -139,29 +156,51 @@ def test(model, device, test_loader, criterion):
     return accuracy, test_loss
 
 def main():
-    set_seed(42)  # 乱数シードを固定
+    # 設定ファイルの読み込み
+    config_path = 'config.yaml'
+    if not os.path.exists(config_path):
+        print(f"Error: Config file '{config_path}' not found. Please ensure it's mounted or copied.")
+        return
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    print(f"[INFO] Loaded configuration from '{config_path}':\n{config}")
+
+    # 設定値を変数に割り当てる
+    global_seed = config['global_seed']
+    batch_size = config['data']['batch_size']
+    target_labels = config['data']['target_labels']
+    hidden_nodes = config['model']['hidden_nodes']
+    epochs = config['training']['epochs']
+    learning_rate = config['training']['learning_rate']
+
+    ## >>> [変更] ラベルマッピング辞書を作成
+    # 例: target_labels=[1, 7] なら label_mapping = {1: 0, 7: 1} となる
+    label_mapping = {original_label: new_index for new_index, original_label in enumerate(target_labels)}
+
+    set_seed(global_seed)  # 乱数シードを固定
 
     # GPUが利用可能であれば 'cuda' (NVIDIA GPU), なければ 'cpu' を使用
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # MNISTデータセットのロード
-    train_loader, test_loader = load_mnist_0_1(batch_size=64)
+    train_loader, test_loader, num_classes = load_mnist_data(batch_size=batch_size, target_labels=target_labels)
 
     # モデルの初期化
-    model = TestNN().to(device)
+    num_classes = len(target_labels)  # ターゲットラベルの数
+    model = TestNN(hidden_nodes=hidden_nodes, num_classes=num_classes).to(device)
 
     # 損失関数と最適化器の定義
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    # エポック数
-    epochs = 5 # 全データセットを何回学習させるか（エポック数）
+    # エポック
     print(f"\n--- Starting training for {epochs} epochs ---")
     for epoch in range(1, epochs + 1): # エポックは1から始まるようにする
-        train(model, device, train_loader, optimizer, criterion, epoch)
+        train(model, device, train_loader, optimizer, criterion, epoch, label_mapping)
         # 各エポックの終わりにテストデータで評価
-        test(model, device, test_loader, criterion)
+        test(model, device, test_loader, criterion, label_mapping)
 
     print("\n--- Training finished! ---")
 
@@ -191,11 +230,16 @@ def main():
 
         # 最も確率が高いクラスのインデックス（予測ラベル）を取得
         # argmax(dim=1): 指定された次元で最大値のインデックスを返す
-        predicted_label = torch.argmax(probabilities, dim=1).item()
+        predicted_label_mapped = torch.argmax(probabilities, dim=1).item()
         # .item(): 1要素のテンソルからPythonの数値を取り出す
 
+    # 可視化のために、真のラベルと予測ラベルを元の数字に戻す
+    inverse_label_map = {v: k for k, v in label_mapping.items()}
+    display_true_label = sample_true_label
+    display_predicted_label = inverse_label_map[predicted_label_mapped]
+
     print(f"\n[SAMPLE] Randomly picked test sample (Index: {random_sample_idx})")
-    print(f"         → True Label: {sample_true_label}, Predicted Label: {predicted_label}")
+    print(f"         → True Label: {display_true_label}, Predicted Label: {display_predicted_label}")
 
     # Matplotlib で可視化
     plt.figure(figsize=(3,3)) # 画像のサイズを設定
@@ -211,7 +255,7 @@ def main():
     plt.imshow(display_image, cmap='gray')
 
     # タイトルに真のラベルと予測ラベルを表示
-    plt.title(f"True: {sample_true_label} / Pred: {predicted_label}", fontsize=14)
+    plt.title(f"True: {sample_true_label} / Pred: {display_predicted_label}", fontsize=14)
     plt.axis('off') # 軸（目盛り）を非表示にする
 
     # 画像をファイルとして保存

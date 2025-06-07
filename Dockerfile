@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir \
         numpy \
         matplotlib \
         torch \
-        torchvision
+        torchvision \
+        pyYAML
 
 COPY . /app
 
