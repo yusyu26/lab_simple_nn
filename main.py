@@ -188,7 +188,6 @@ def main():
     train_loader, test_loader, num_classes = load_mnist_data(batch_size=batch_size, target_labels=target_labels)
 
     # モデルの初期化
-    num_classes = len(target_labels)  # ターゲットラベルの数
     model = TestNN(hidden_nodes=hidden_nodes, num_classes=num_classes).to(device)
 
     # 損失関数と最適化器の定義
