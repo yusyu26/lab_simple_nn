@@ -1,0 +1,18 @@
+# nn-test/config.yaml
+
+# グローバル設定
+global_seed: 42 # 乱数シード (再現性のために固定)
+
+# データ設定
+data:
+  batch_size: 64
+  target_labels: [4, 9] # 分類する2つのラベル (例: [0, 1] または [3, 8])
+
+# モデル設定
+model:
+  hidden_nodes: 128 # 隠れ層のノード数
+
+# 学習設定
+training:
+  epochs: 3
+  learning_rate: 0.001
