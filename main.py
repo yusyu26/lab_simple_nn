@@ -36,14 +36,14 @@ def load_mnist_data(batch_size=64, target_labels=[0, 1]):
     # train=False: テストデータセットをロードします。
     test_dataset = datasets.MNIST('./data', train=False, download=True, transform=transform)
 
-    # 0と1のデータのみを抽出するためのインデックスリストを作成
+    # 指定したラベルのデータのみを抽出するためのインデックスリストを作成
     # enumerate(train_dataset.targets): データセットの各要素のインデックスとラベルを取得
-    # if label in [0, 1]: ラベルが0または1の場合のみ抽出
-    train_indices_0_1 = [i for i, label in enumerate(train_dataset.targets) if label in target_labels]
-    test_indices_0_1 = [i for i, label in enumerate(test_dataset.targets) if label in target_labels]
+    # if label in target_label: ラベルが指定したラベルの場合のみ抽出
+    train_indices_filtered = [i for i, label in enumerate(train_dataset.targets) if label in target_labels]
+    test_indices_filtered = [i for i, label in enumerate(test_dataset.targets) if label in target_labels]
 
-    train_subset = Subset(train_dataset, train_indices_0_1)
-    test_subset = Subset(test_dataset, test_indices_0_1)
+    train_subset = Subset(train_dataset, train_indices_filtered)
+    test_subset = Subset(test_dataset, test_indices_filtered)
 
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
