@@ -27,7 +27,7 @@ def set_seed(seed):
 def load_mnist_data(batch_size=64, target_labels=[0, 1]):
     transform = transforms.Compose([
         transforms.ToTensor(),
-        #   - MNISTデータセット全体の平均値と標準偏差を使用しています。
+        #   - MNISTデータセット全体の平均値と標準偏差を使用
         transforms.Normalize((0.1307,), (0.3081,))
     ])
 
